@@ -5,7 +5,7 @@
  * created on windows machines. The socket will always have the non-blocking and duplex flags set (i.e. IPv4 and IPv6).
 */
 
-#include "tcpSocketWrapper.h"
+#include "tcpWrapper.h"
 
 #include <string>
 #include <iostream>
@@ -14,64 +14,53 @@
 #include <tcp/socketExceptions.h>
 
 namespace tcp{
-    void tcpSocketWrapper::Connect(const char *hostAddress, const char *service) {
+    void tcpWrapper::Connect(const char *hostAddress, const char *service) {
         currentState = currentState->Connect(hostAddress, service);
     }
 
-    void tcpSocketWrapper::Write() {}
+    void tcpWrapper::Write(const char* buffer, int bufferSize) {}
 
-    void tcpSocketWrapper::Read() {}
+    void tcpWrapper::Read(const char* buffer, int bufferSize) {}
 
-    void tcpSocketWrapper::Update() {}
+    void tcpWrapper::Update() {}
 
-    tcpSocketWrapper::tcpSocketWrapper(){
+    // @TODO Consider lifting the WSAStartup call to the thread managing all sockets.
+    // @TODO There might be a memory leak here, if socket creation fails. Need to test how that works.
+    tcpWrapper::tcpWrapper(): currentState(initializedState()){
         WSADATA wsaData;
-        const WORD version = MAKEWORD(2,2);
 
         int result = WSAStartup(version, &wsaData);
 
-        if(result != 0){
-            // @TODO Figure out what happened and if it's recoverable. Must be finished before you even think of sharing the code.
-        }
+        if(result != 0) throw fatalWSAException(result);
 
         tcpSocket = WSASocketW(addressProtocol, socketType, socketProtocol, socketProtocolInfo, 0, socketFlags);
 
-        if(tcpSocket != INVALID_SOCKET){
-            // @TODO Read and react appropriately to socket failure conditions. Do this when considering test cases.
-        }
+        if(tcpSocket == INVALID_SOCKET) throw fatalSocketException(WSAGetLastError());
 
         BOOL ipv6Only = FALSE;
         int ipv6OnlyLen = sizeof(BOOL);
 
         result = setsockopt(tcpSocket, IPPROTO_IPV6, IPV6_V6ONLY, (char *) &ipv6Only, ipv6OnlyLen);
 
-        // %TODO Figure out if anything can actually go wrong here and address if need be (Or document and let propogate).
-
-        currentState(std::make_unique<initializedState>(initializedState(*this)));
+        if(result == SOCKET_ERROR) throw fatalSocketException(WSAGetLastError());
     }
 
-    tcpSocketWrapper::~tcpSocketWrapper() {
+    tcpWrapper::~tcpWrapper() {
         int result;
 
         if (tcpSocket !=INVALID_SOCKET) {
             result = closesocket(tcpSocket);
 
-            if(result == SOCKET_ERROR){
-                std::cout << "Something went wrong when closing the socket." << std::endl;
-            }
+            if(result == SOCKET_ERROR) std::cout << "Something went wrong when closing the socket." << std::endl;
         }
 
         result = WSACleanup();
-        if(result == SOCKET_ERROR) {
-            std::cout << "Something went wrong when closing the socket." << std::endl;
-        }
+
+        if(result == SOCKET_ERROR) std::cout << "Something went wrong when calling WSACleanup()." << std::endl;
     }
 
-    socketState::socketState(tcpSocketWrapper &socket): socketWrapper(socket){}
-
-    initializedState::initializedState(tcpSocketWrapper &socket): socketState(socket) {}
-
-    std::unique_ptr<socketState> initializedState::Connect(const char *hostAddress, const char *service) {
+    // @TODO Extract the namespace resolution out of this method and move it into it's own function.
+    void initializedState::Connect(tcpWrapper&, const char *hostAddress, const char *service) {
         // Start the attempt to resolve the address, allow for three attempts to be made before aborting.
         const addrinfo hints = {AI_V4MAPPED, AF_UNSPEC, SOCK_STREAM, IPPROTO_TCP, 0, nullptr, nullptr, nullptr};
         struct addrinfo *results = nullptr;
@@ -115,16 +104,16 @@ namespace tcp{
         return std::move(state);
     }
 
-    std::unique_ptr<socketState> initializedState::Write() {
+    void initializedState::Write() {
         throw invalidStateOperation("Write operations should not be called until the socket is connected.");
 
     }
 
-    std::unique_ptr<socketState> initializedState::Read() {
+    void initializedState::Read() {
         throw invalidStateOperation("Read operations should not be called until the socket is connected.");
     }
 
-    std::unique_ptr<socketState> initializedState::Update() {
+    void initializedState::Update() {
         throw invalidStateOperation("Update operation behavior is undefined until socket Connect call is made.");
     }
 
@@ -144,39 +133,39 @@ namespace tcp{
         }
     }
 
-    std::unique_ptr<socketState> connectingState::Connect(const char *hostAddress, const char *service) {
+    void connectingState::Connect(tcpWrapper&, const char *hostAddress, const char *service) {
         throw invalidStateOperation("Can't connect to " + std::string(hostAddress) + "@" + std::string(service)
                                      + ", as the socket is already in the process of connecting.");
     }
 
-    std::unique_ptr<socketState> connectingState::Write() {
+    void connectingState::Write() {
         throw invalidStateOperation("Write operations cannot be called until the socket is connected.");
     }
 
-    std::unique_ptr<socketState> connectingState::Read() {
+    void connectingState::Read() {
         throw invalidStateOperation("Read operations cannot be called until the socket is connected.");
     }
 
     // %TODO Check the event log, pass nullptr if no event, respond appropriately otherwise.
-    std::unique_ptr<socketState> connectingState::Update() {
+    void connectingState::Update() {
 
 
     }
 
-    std::unique_ptr<socketState> connectedState::Connect(const char *hostAddress, const char *service) {
+    void connectedState::Connect(tcpWrapper&, const char *hostAddress, const char *service) {
         throw invalidStateOperation("Can't connect to " + std::string(hostAddress) + "@" + std::string(service)
                                      + ", as the socket is already connected.");
     }
 
-    std::unique_ptr<socketState> connectedState::Write() {
+    void connectedState::Write() {
 
     }
 
-    std::unique_ptr<socketState> connectedState::Read() {
+    void connectedState::Read() {
 
     }
 
-    std::unique_ptr<socketState> connectedState::Update() {
+    void connectedState::Update() {
 
     }
 }

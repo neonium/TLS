@@ -20,6 +20,9 @@ namespace tcp {
     fatalSocketException::fatalSocketException( const char* what ): std::runtime_error(what){}
     fatalSocketException::fatalSocketException( const std::string& what ): std::runtime_error(what){}
 
+    fatalWSAException::fatalWSAException( const char* what ): std::runtime_error(what){}
+    fatalWSAException::fatalWSAException( const std::string& what ): std::runtime_error(what){}
+
     timeoutExcpetion::timeoutExcpetion()
             : std::runtime_error("Connection timed out."){}
     timeoutExcpetion::timeoutExcpetion( const char* what ): std::runtime_error(what){}

@@ -30,6 +30,13 @@ namespace tcp {
         explicit fatalSocketException( const char* );
     };
 
+    struct fatalWSAException: public std::runtime_error{
+    public:
+        explicit fatalWSAException( DWORD );
+        explicit fatalWSAException( const std::string& );
+        explicit fatalWSAException( const char* );
+    };
+
     struct timeoutExcpetion: public std::runtime_error{
     public:
         explicit timeoutExcpetion( );

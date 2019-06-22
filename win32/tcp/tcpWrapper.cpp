@@ -60,40 +60,46 @@ namespace tcp{
     }
 
     // @TODO Extract the namespace resolution out of this method and move it into it's own function.
-    void initializedState::Connect(tcpWrapper&, const char *hostAddress, const char *service) {
+    void initializedState::Connect(tcpWrapper& sock, const char *hostAddress, const char *service) {
         // Start the attempt to resolve the address, allow for three attempts to be made before aborting.
+        // It should be noted both that this is blocking, and that this is probably not the right solution long term.
+        // The code should be changed to allow overlaping IO to be used, likely with another state to handle the logic.
         const addrinfo hints = {AI_V4MAPPED, AF_UNSPEC, SOCK_STREAM, IPPROTO_TCP, 0, nullptr, nullptr, nullptr};
         struct addrinfo *results = nullptr;
 
-        DWORD err;
+        DWORD result;
         int count = 0;
 
         do{
-            err = getaddrinfo(hostAddress, service, &hints, &results);
-            if(err != 0) {
+            result = getaddrinfo(hostAddress, service, &hints, &results);
+            if(result != 0) {
                 if (count == 3){
                     throw timeoutExcpetion("Failed to resolve the host address after three attempts.");
-                } else if(err == WSATRY_AGAIN){
+                } else if(result == WSATRY_AGAIN){
                     count++;
                     continue;
-                } else if(err == WSAHOST_NOT_FOUND){
+                } else if(result == WSAHOST_NOT_FOUND){
                     throw noSuchAddress(hostAddress, service);
                 } else {
-                    throw fatalSocketException(err);
+                    throw fatalSocketException(result);
                 }
             }
-        } while (err != 0);
+        } while (result != 0);
 
         // Get the next possible point of connection and  create an event to listen for updates on the sockets connect.
         struct addrinfo *next = results->ai_next;
-        std::unique_ptr<socketState> state(std::make_unique<connectingState>(connectingState(*this, next)));
+        sock.currentState(std::make_unique<connectingState>(connectingState(sock, next)));
 
         // Attempt to connect to the first option in out getaddrinfo results.
         WSABUF *replyBuffer = nullptr;
-        err = WSAConnect(socketWrapper.tcpSocket, results->ai_addr, (int)results->ai_addrlen, nullptr, replyBuffer, nullptr, nullptr);
-        if(err != SOCKET_ERROR || WSAGetLastError() != WSAEWOULDBLOCK){
-            // @TODO Actually implement errors (this needs to be done before moving to the next level of abstraction)
-            // Could be that you conected the socket to a trivial location, could be problem.
+        result = WSAConnect(tcpWrapper.tcpSocket, results->ai_addr, (int)results->ai_addrlen, nullptr, replyBuffer, nullptr, nullptr);
+        DWORD err = WSAGetLastError();
+        if(result != SOCKET_ERROR && err != WSAEWOULDBLOCK){
+            /* @TODO Actually implement specific errors (this needs to be done before moving to the next level of abstraction)
+             *  fatalSocketException works for now, but it might make sense to allow re-connect attempts for transient
+             *  connection failure errors.
+             */
+            throw fatalSocketException(err);
         }
 
         // Get the next possible point of connection and release the memory of the first address attempted.
@@ -101,7 +107,6 @@ namespace tcp{
         freeaddrinfo(results);
 
         // Return the connecting state, passing ownership of all pointers to that state.
-        return std::move(state);
     }
 
     void initializedState::Write() {
@@ -117,7 +122,7 @@ namespace tcp{
         throw invalidStateOperation("Update operation behavior is undefined until socket Connect call is made.");
     }
 
-    connectingState::connectingState(initializedState &curState, addrinfo *next): socketState(curState.socketWrapper) {
+    connectingState::connectingState(tcpWrapper& sock, addrinfo *next) {
         // Create a WSA event to monitor for connection or disconnection events, all error types fatal here.
         connectEvent = WSACreateEvent();
 
@@ -126,7 +131,7 @@ namespace tcp{
             throw fatalSocketException(err);
         }
 
-        int result = WSAEventSelect(socketWrapper.tcpSocket, connectEvent, FD_CONNECT | FD_CLOSE);
+        int result = WSAEventSelect(sock.tcpSocket, connectEvent, FD_CONNECT | FD_CLOSE);
         if (result != 0){
             DWORD err = WSAGetLastError();
             throw fatalSocketException(err);

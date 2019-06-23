@@ -68,6 +68,16 @@ public:
 
 class initializedState: public socketState{
 public:
+    /**
+     * Excecute Connect call on an initialized state tcpWrapper.
+     * Take action for a Connect call on a socket in the initialized state. As per diagram, appropriate action in this
+     * case is to resolve the IP address by DNS query and then initiate a connection attempt on the first returned
+     * result. This moves the state of the tcpWrapper to the "connecting" state.
+     * @param hostAddress Null byte terminated c-style string of the target server address.
+     * @param service Null byte terminated c-style string of the service name (i.e. http) or port of the target server.
+     * @throws noSuchAddress In the case that the address passed is invalid.
+     * @throws fatalSocketException In the case that there is a fatal error during either name resolution or connection.
+     */
     void Connect(tcpWrapper&,const char *hostAddress, const char *service);
     void Write();
     void Read();

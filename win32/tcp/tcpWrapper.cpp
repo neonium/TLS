@@ -62,33 +62,35 @@ namespace tcp{
     }
 
     // @TODO Extract the namespace resolution out of this method and move it into it's own function.
-    void initializedState::Connect(tcpWrapper&, const char *hostAddress, const char *service) {
+    void initializedState::Connect(tcpWrapper& sock, const char *hostAddress, const char *service) {
         // Start the attempt to resolve the address, allow for three attempts to be made before aborting.
+        // It should be noted both that this is blocking, and that this is probably not the right solution long term.
+        // The code should be changed to allow overlaping IO to be used, likely with another state to handle the logic.
         const addrinfo hints = {AI_V4MAPPED, AF_UNSPEC, SOCK_STREAM, IPPROTO_TCP, 0, nullptr, nullptr, nullptr};
         struct addrinfo *results = nullptr;
 
-        DWORD err;
+        DWORD result;
         int count = 0;
 
         do{
-            err = getaddrinfo(hostAddress, service, &hints, &results);
-            if(err != 0) {
+            result = getaddrinfo(hostAddress, service, &hints, &results);
+            if(result != 0) {
                 if (count == 3){
                     throw timeoutExcpetion("Failed to resolve the host address after three attempts.");
-                } else if(err == WSATRY_AGAIN){
+                } else if(result == WSATRY_AGAIN){
                     count++;
                     continue;
-                } else if(err == WSAHOST_NOT_FOUND){
+                } else if(result == WSAHOST_NOT_FOUND){
                     throw noSuchAddress(hostAddress, service);
                 } else {
-                    throw fatalSocketException(err);
+                    throw fatalSocketException(result);
                 }
             }
-        } while (err != 0);
+        } while (result != 0);
 
         // Get the next possible point of connection and  create an event to listen for updates on the sockets connect.
         struct addrinfo *next = results->ai_next;
-        std::unique_ptr<socketState> state(std::make_unique<connectingState>(connectingState(*this, next)));
+        sock.currentState(std::make_unique<connectingState>(connectingState(sock, next)));
 
         // Attempt to connect to the first option in out getaddrinfo results.
         WSABUF *replyBuffer = nullptr;

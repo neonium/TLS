@@ -78,7 +78,7 @@ public:
 
 class connectingState: public socketState{
 public:
-    connectingState(initializedState&, addrinfo*);
+    connectingState(tcpWrapper&, addrinfo*);
 
     void Connect(tcpWrapper&,const char*, const char*);
     void Write();
@@ -88,6 +88,7 @@ public:
     ~connectingState();
 private:
     WSAEVENT connectEvent;
+    struct _OVERLAPPED connectingOverlap;
 };
 
 class connectedState: public socketState {

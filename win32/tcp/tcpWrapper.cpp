@@ -11,6 +11,8 @@
 #include <iostream>
 
 #include <ws2tcpip.h>
+#include <mswsock.h>
+
 #include <tcp/socketExceptions.h>
 
 namespace tcp{
@@ -90,11 +92,8 @@ namespace tcp{
 
         // Attempt to connect to the first option in out getaddrinfo results.
         WSABUF *replyBuffer = nullptr;
-        err = WSAConnect(socketWrapper.tcpSocket, results->ai_addr, (int)results->ai_addrlen, nullptr, replyBuffer, nullptr, nullptr);
-        if(err != SOCKET_ERROR || WSAGetLastError() != WSAEWOULDBLOCK){
-            // @TODO Actually implement errors (this needs to be done before moving to the next level of abstraction)
-            // Could be that you conected the socket to a trivial location, could be problem.
-        }
+        // Leaving this in only until LPFNCONNECTEX is done.
+        //err = WSAConnect(socketWrapper.tcpSocket, results->ai_addr, (int)results->ai_addrlen, nullptr, replyBuffer, nullptr, nullptr);
 
         // Get the next possible point of connection and release the memory of the first address attempted.
         results->ai_next = nullptr;
@@ -117,7 +116,8 @@ namespace tcp{
         throw invalidStateOperation("Update operation behavior is undefined until socket Connect call is made.");
     }
 
-    connectingState::connectingState(initializedState &curState, addrinfo *next): socketState(curState.socketWrapper) {
+    // @TODO Repeating the same error calling segment of code allot. I should make that a method. (Exception class)-> call with getlasterror
+    connectingState::connectingState(tcpWrapper&, addrinfo *target) {
         // Create a WSA event to monitor for connection or disconnection events, all error types fatal here.
         connectEvent = WSACreateEvent();
 
@@ -126,10 +126,18 @@ namespace tcp{
             throw fatalSocketException(err);
         }
 
-        int result = WSAEventSelect(socketWrapper.tcpSocket, connectEvent, FD_CONNECT | FD_CLOSE);
+        int result = WSAEventSelect(tcpWrapper, connectEvent, FD_CONNECT | FD_CLOSE);
         if (result != 0){
             DWORD err = WSAGetLastError();
             throw fatalSocketException(err);
+        }
+
+        memset(connectingOverlap,0, sizeof(_OVERLAPPED));
+        _OVERLAPPED.hEvent = connectEvent;
+        err = LPFNCONNECTEX(tcpWrapper, target->ai_addr, (int)target->ai_addrlen, nullptr, nullptr, nullptr, connectingOverlap);
+        if(err != SOCKET_ERROR || WSAGetLastError() != WSAEWOULDBLOCK){
+            // @TODO Actually implement errors (this needs to be done before moving to the next level of abstraction)
+            // Could be that you connected the socket to a trivial location, could be problem.
         }
     }
 
